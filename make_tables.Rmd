@@ -1,0 +1,105 @@
+---
+title: "tables"
+output: html_document
+---
+
+```{r}
+install.packages("reactable")
+install.packages("reactablefmtr")
+remotes::install_github("rstudio/webshot2")
+install.packages("htmlwidgets")
+
+library(reactable)
+library(reactablefmtr)
+library(webshot2)
+library(tidyverse)
+library(htmlwidgets)
+library(Rcpp)
+
+setwd("C:/Users/Joshua/Desktop/Daucus_qpc/quaint_pipeline") # adjust
+```
+
+```{r}
+completeps <- read.csv("pvalues_complete_updated.csv", header = T)
+subsetps <- read.csv("pvalues.csv", header = T)
+subsetps <- na.omit(subsetps)
+```
+
+```{r}
+pvalscomp <- completeps %>% mutate_if(is.numeric, round, digits = 3) %>% select(-X)
+pvalssub <- subsetps %>% mutate_if(is.numeric, round, digits = 3) %>% select(-X)
+```
+
+# complete dataset
+```{r}
+complete_table <- reactable(
+  pvalscomp[1:9,], 
+  columns = list(
+    trait = colDef(name = "Phenotype"),
+    complete.PC1 = colDef(name = "PC1"),
+    complete.PC2 = colDef(name = "PC2"),
+    complete.PC3 = colDef(name = "PC3"),
+    complete.PC4 = colDef(name = "PC4"),
+    treat.PC1 = colDef(name = "PC1"),
+    treat.PC2 = colDef(name = "PC2"),
+    treat.PC3 = colDef(name = "PC3"),
+    treat.PC4 = colDef(name = "PC4"),
+    diff.PC1 = colDef(name = "PC1"),
+    diff.PC2 = colDef(name = "PC2"),
+    diff.PC3 = colDef(name = "PC3"),
+    diff.PC4 = colDef(name = "PC4")
+  ),
+  columnGroups = list(
+    colGroup(name = "Control", columns = c("complete.PC1", "complete.PC2", "complete.PC3", "complete.PC4")),
+    colGroup(name = "Treatment", columns = c("treat.PC1", "treat.PC2", "treat.PC3", "treat.PC4")),
+    colGroup(name = "Difference", columns = c("diff.PC1", "diff.PC2", "diff.PC3", "diff.PC4"))
+  )
+)
+
+complete_table
+```
+
+# subset data
+```{r}
+subset_table <- reactable(
+  pvalssub[1:9,], 
+  columns = list(
+    wild = colDef(name = "wild"),
+    cultivated = colDef(name = "cultivated"),
+    east = colDef(name = "east"),
+    west = colDef(name = "west"),
+    wild_treat = colDef(name = "wild"),
+    cultivated_treat = colDef(name = "cultivated"),
+    east_treat = colDef(name = "east"),
+    west_treat = colDef(name = "west"),
+    wild_diff = colDef(name = "wild"),
+    cultivated_diff = colDef(name = "cultivated"),
+    east_diff = colDef(name = "east"),
+    west_diff = colDef(name = "west")
+  ),
+  columnGroups = list(
+    colGroup(name = "Control", columns = c("wild", "cultivated", "east", "west")),
+    colGroup(name = "Treatment", columns = c("wild_treat", "cultivated_treat", "east_treat", "west_treat")),
+    colGroup(name = "Difference", columns = c("wild_diff", "cultivated_diff", "east_diff", "west_diff"))
+  )
+)
+
+subset_table
+```
+
+```{r}
+html_file <- "table.html"
+img_file <- "img.png"
+
+saveWidget(widget = complete_table, file = html_file, selfcontained = TRUE)
+webshot(url = html_file, file = img_file, delay = 0.1, vwidth = 1245)
+```
+
+```{r}
+html_file <- "sub_table.html"
+img_file <- "sub_img.png"
+
+saveWidget(widget = subset_table, file = html_file, selfcontained = TRUE)
+webshot(url = html_file, file = img_file, delay = 0.1, vwidth = 1245)
+```
+

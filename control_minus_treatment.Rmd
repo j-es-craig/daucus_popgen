@@ -1,0 +1,52 @@
+---
+title: "control_minus_treatment"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(viridis)
+library(quaint)
+library(tidyverse)
+library(plotly)
+library(stats)
+
+setwd("C:/Users/Joshua/Desktop/Daucus_qpc/quaint_pipeline") # adjust
+```
+
+```{r}
+View(jTraits)
+View(jTraits_treat)
+View(jTraits_cont)
+View(jTraits_diff)
+View(jTraits_diff_final)
+View(jTraits_diff_final_complete)
+```
+
+```{r}
+jTraits_cont <- jTraits %>% filter(Genotype != 29) %>% filter(Genotype != 13)
+jTraits_treat_op <- jTraits_treat %>% select(!c(line, Group, Treatment))
+jTraits_cont_op <- jTraits_cont %>% select(!c(line, Group, Treatment))
+
+
+jTraits_diff <- jTraits_treat_op - jTraits_cont_op
+
+jTraits_diff_final <- jTraits_diff %>% select(!Genotype)
+jTraits_diff_final$line = jTraits_cont$line
+jTraits_diff_final$Group = jTraits_cont$Group
+jTraits_diff_final$Genotype = jTraits_cont$Genotype
+```
+
+```{r}
+jTraits_diff_final_complete <- merge(indivs, jTraits_diff_final, by = "line", all.x = T, sort = F)
+jTraits_diff_final_complete <- na.omit(jTraits_diff_final_complete)
+jTraits_diff_final_complete$Group <- jTraits_diff_final_complete$Group.x
+```
+
+```{r}
+wild_diff <- jTraits_diff_final_complete %>% filter(Group != "EasternCultivated") %>% filter(Group != "WesternCultivated")
+cultivated_diff <- jTraits_diff_final_complete %>% filter(Group != "EasternWild") %>% filter(Group != "WesternWild")
+west_diff <- jTraits_diff_final_complete %>% filter(Group != "EasternWild") %>% filter(Group != "EasternCultivated")
+east_diff <- jTraits_diff_final_complete %>% filter(Group != "WesternWild") %>% filter(Group != "WesternCultivated")
+```
+

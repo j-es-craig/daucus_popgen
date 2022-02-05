@@ -1,0 +1,639 @@
+---
+title: "revised_qpc_pipeline"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(viridis)
+library(quaint)
+library(tidyverse)
+library(plotly)
+library(stats)
+library(ggfortify)
+
+setwd("C:/Users/Joshua/Desktop/Daucus_qpc/quaint_pipeline") # adjust
+```
+
+# Read in phenotype data, control
+```{r}
+# for wrangling
+indivs <- read.table('data/out.012.copy.indv')
+colnames(indivs) = c("line", "Group")
+
+raw_control <- read.csv('data/raw_control.csv', header = TRUE)
+raw_control_complete <- merge(indivs, raw_control, by = "line", all.x = T, sort = F)
+raw_control_pruned <- raw_control_complete %>% filter(Group != "Inbred") %>% filter(Group != "Outgroup")
+jTraits <- raw_control_pruned
+
+# subset phenotype data
+wild <- raw_control_pruned %>% filter(Group != "EasternCultivated") %>% filter(Group != "WesternCultivated")
+cultivated <- raw_control_pruned %>% filter(Group != "EasternWild") %>% filter(Group != "WesternWild")
+west <- raw_control_pruned %>% filter(Group != "EasternWild") %>% filter(Group != "EasternCultivated")
+east <- raw_control_pruned %>% filter(Group != "WesternWild") %>% filter(Group != "WesternCultivated")
+```
+
+# Read in phenotype data, treatment
+```{r}
+raw_treatment <- read.csv('data/raw_treatment.csv', header = T)
+raw_treatment_complete <- merge(indivs, raw_treatment, by = 'line', all.x = T, sort = F)
+raw_treatment_pruned <- raw_treatment_complete %>% filter(Group != "Inbred") %>% filter(Group != "Outgroup") 
+raw_treatment_pruned <- na.omit(raw_treatment_pruned)
+jTraits_treat <- raw_treatment_pruned
+
+# subset phenotype data
+wild_treat <- raw_treatment_pruned %>% filter(Group != "EasternCultivated") %>% filter(Group != "WesternCultivated")
+cultivated_treat <- raw_treatment_pruned %>% filter(Group != "EasternWild") %>% filter(Group != "WesternWild")
+west_treat <- raw_treatment_pruned %>% filter(Group != "EasternWild") %>% filter(Group != "EasternCultivated")
+east_treat <- raw_treatment_pruned %>% filter(Group != "WesternWild") %>% filter(Group != "WesternCultivated")
+```
+
+# Read in genotype data
+```{r}
+# data produced by vcftools 012 function
+jG_1 = read.table('data/out.012')
+jG_2 = jG_1[-c(17, 23), -1] # remove SNPs we don't have trait data for
+jG_2 = (jG_2) / 2 # obtain allele frequencies
+
+#add groups to SNP matrix for ez filtering
+indivs = cbind(indivs, raw_control_complete$Genotype)
+indivs = rename(indivs, Genotype = 'raw_control_complete$Genotype') # doing this multiple times readds column
+
+# add to SNP matrix
+jG_3 = cbind(indivs, jG_2)
+jG_4 = jG_3 %>% filter(Group != "Inbred") %>% filter(Group != "Outgroup") # this is ONLY for CONTROL phenotype data
+jG_5 = jG_4 %>% filter(Genotype != 29) %>% filter(Genotype != 13) # this is ONLY for when using TREATMENT phenotype data
+jG_6 = jG_5 %>% select(!c(Group, Genotype, line))
+```
+
+# wrangling the matrix
+```{r}
+# create subset matrices, control
+jG_wild = jG_4 %>% filter(Group != "EasternCultivated") %>% filter(Group != "WesternCultivated") %>% select(!c(Group, Genotype, line))
+jG_cultivated = jG_4 %>% filter(Group != "EasternWild") %>% filter(Group != "WesternWild") %>% select(!c(Group, Genotype, line))
+jG_east = jG_4 %>% filter(Group != "WesternCultivated") %>% filter(Group != "WesternWild") %>% select(!c(Group, Genotype, line))
+jG_west = jG_4 %>% filter(Group != "EasternCultivated") %>% filter(Group != "EasternWild") %>% select(!c(Group, Genotype, line))
+
+# create subset matrices, treatment 
+jG_wild_treat = jG_5 %>% filter(Group != "EasternCultivated") %>% filter(Group != "WesternCultivated") %>% select(!c(Group, Genotype, line))
+jG_cultivated_treat = jG_5 %>% filter(Group != "EasternWild") %>% filter(Group != "WesternWild") %>% select(!c(Group, Genotype, line))
+jG_east_treat = jG_5 %>% filter(Group != "WesternCultivated") %>% filter(Group != "WesternWild") %>% select(!c(Group, Genotype, line))
+jG_west_treat = jG_5 %>% filter(Group != "EasternCultivated") %>% filter(Group != "EasternWild") %>% select(!c(Group, Genotype, line))
+
+# for complete analyses
+jG_complete = jG_4 %>% select(-c(line, Group, Genotype))
+
+nrow(jG_wild) - 2
+nrow(jG_cultivated) - 2
+nrow(jG_east) - 2
+nrow(jG_west) - 2
+
+nrow(jG_wild_treat) - 2
+nrow(jG_cultivated_treat) - 2
+nrow(jG_east_treat) - 2
+nrow(jG_west_treat) - 2
+```
+
+# making K / eigendecomposition
+```{r}
+# for control
+jK = make_k(as.matrix(jG_2)) 
+jEig = eigen(jK)
+
+jK_wild = make_k(as.matrix(jG_wild))
+jK_cultivated = make_k(as.matrix(jG_cultivated))
+jK_west = make_k(as.matrix(jG_west))
+jK_east = make_k(as.matrix(jG_east))
+
+jEig_wild = eigen(jK_wild)
+jEig_cultivated = eigen(jK_cultivated)
+jEig_west = eigen(jK_west)
+jEig_east = eigen(jK_east)
+
+# for treatment AND diff
+jK_treat = make_k(as.matrix(jG_6))
+jEig_treat = eigen(jK_treat)
+
+jK_wild_treat = make_k(as.matrix(jG_wild_treat))
+jK_cultivated_treat = make_k(as.matrix(jG_cultivated_treat))
+jK_west_treat = make_k(as.matrix(jG_west_treat))
+jK_east_treat = make_k(as.matrix(jG_east_treat))
+
+jEig_wild_treat = eigen(jK_wild_treat)
+jEig_cultivated_treat = eigen(jK_cultivated_treat)
+jEig_west_treat = eigen(jK_west_treat)
+jEig_east_treat = eigen(jK_east_treat)
+
+# for complete analyses, for use with jTraits
+jK_complete = make_k(as.matrix(jG_complete))
+jEig_complete = eigen(jK_complete)
+
+# for complete analyses, treatment / difference, for use with jTraits_treat and jTraits_diff_final_complete
+jK_complete_treat = make_k(as.matrix(jG_6))
+jEig_complete_treat = eigen(jK_complete_treat)
+
+View(jK_complete)
+View(jK_complete_treat)
+```
+
+# running Qpc, functions
+```{r}
+# complete
+do_calcQpc <- function(x, y){
+  n = calcQpc(myZ = y,
+               myU = x$vectors,
+               myLambdas = x$values,
+               myM = 1:4,
+               myL = 5:23)
+  
+  return(n)
+}
+
+# complete treat. 
+do_calcQpc_treat <- function(x, y){
+  n = calcQpc(myZ = y,
+               myU = x$vectors,
+               myLambdas = x$values,
+               myM = 1:4,
+               myL = 5:21)
+  
+  return(n)
+}
+
+# subset
+do_calcQpc_subset <- function(x, y){
+  n = calcQpc(myZ = y,
+               myU = x$vectors,
+               myLambdas = x$values,
+               myM = 1:1,
+               myL = 2:10)
+  
+  return(n)
+}
+
+do_calcQpc_subset_t <- function(x, y){
+  n = calcQpc(myZ = y,
+               myU = x$vectors,
+               myLambdas = x$values,
+               myM = 1:1,
+               myL = 2:9)
+  
+  return(n)
+}
+
+do_calcQpc_subset_T <- function(x, y){
+  n = calcQpc(myZ = y,
+               myU = x$vectors,
+               myLambdas = x$values,
+               myM = 1:1,
+               myL = 2:11)
+  
+  return(n)
+}
+```
+
+# running Qpc, 1
+```{r}
+compile_qpc_subset <- function(x, y){
+  
+  test0 <- do_calcQpc_subset(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset(y, x$mean_Height)
+  test6 <- do_calcQpc_subset(y, x$mean_Length)
+  test7 <- do_calcQpc_subset(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset(y, x$mean_R.Weight)
+  
+  n <- c(test0$pvals, test1$pvals, test2$pvals, test3$pvals, test4$pvals, test5$pvals, test6$pvals, test7$pvals, test8$pvals)
+  return(n)
+}
+
+compile_qpc_subset_t <- function(x, y){
+  
+  test0 <- do_calcQpc_subset_t(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset_t(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset_t(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset_t(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset_t(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset_t(y, x$mean_Height)
+  test6 <- do_calcQpc_subset_t(y, x$mean_Length)
+  test7 <- do_calcQpc_subset_t(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset_t(y, x$mean_R.Weight)
+  
+  n <- c(test0$pvals, test1$pvals, test2$pvals, test3$pvals, test4$pvals, test5$pvals, test6$pvals, test7$pvals, test8$pvals)
+  return(n)
+}
+
+compile_qpc_subset_T <- function(x, y){
+  
+  test0 <- do_calcQpc_subset_T(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset_T(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset_T(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset_T(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset_T(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset_T(y, x$mean_Height)
+  test6 <- do_calcQpc_subset_T(y, x$mean_Length)
+  test7 <- do_calcQpc_subset_T(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset_T(y, x$mean_R.Weight)
+  
+  n <- c(test0$pvals, test1$pvals, test2$pvals, test3$pvals, test4$pvals, test5$pvals, test6$pvals, test7$pvals, test8$pvals)
+  return(n)
+}
+
+compile_qpc <- function(x, y){
+  
+  test0 <- do_calcQpc(y, x$mean_Diameter)
+  test1 <- do_calcQpc(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc(y, x$mean_Height)
+  test6 <- do_calcQpc(y, x$mean_Length)
+  test7 <- do_calcQpc(y, x$mean_S.Weight)
+  test8 <- do_calcQpc(y, x$mean_R.Weight)
+  
+  l <- c(test0$pvals[1], test1$pvals[1], test2$pvals[1], test3$pvals[1], test4$pvals[1], test5$pvals[1], test6$pvals[1], test7$pvals[1], test8$pvals[1])
+  m <- c(test0$pvals[2], test1$pvals[2], test2$pvals[2], test3$pvals[2], test4$pvals[2], test5$pvals[2], test6$pvals[2], test7$pvals[2], test8$pvals[2])
+  n <- c(test0$pvals[3], test1$pvals[3], test2$pvals[3], test3$pvals[3], test4$pvals[3], test5$pvals[3], test6$pvals[3], test7$pvals[3], test8$pvals[3])
+  o <- c(test0$pvals[4], test1$pvals[4], test2$pvals[4], test3$pvals[4], test4$pvals[4], test5$pvals[4], test6$pvals[4], test7$pvals[4], test8$pvals[4])
+  
+  dff = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+  dff$pc1 <- l
+  dff$pc2 <- m
+  dff$pc3 <- n
+  dff$pc4 <- o
+  
+  
+  return(dff)
+}
+
+compile_qpc_treat <- function(x, y){
+  
+  test0 <- do_calcQpc_treat(y, x$mean_Diameter)
+  test1 <- do_calcQpc_treat(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_treat(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_treat(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_treat(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_treat(y, x$mean_Height)
+  test6 <- do_calcQpc_treat(y, x$mean_Length)
+  test7 <- do_calcQpc_treat(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_treat(y, x$mean_R.Weight)
+  
+  l <- c(test0$pvals[1], test1$pvals[1], test2$pvals[1], test3$pvals[1], test4$pvals[1], test5$pvals[1], test6$pvals[1], test7$pvals[1], test8$pvals[1])
+  m <- c(test0$pvals[2], test1$pvals[2], test2$pvals[2], test3$pvals[2], test4$pvals[2], test5$pvals[2], test6$pvals[2], test7$pvals[2], test8$pvals[2])
+  n <- c(test0$pvals[3], test1$pvals[3], test2$pvals[3], test3$pvals[3], test4$pvals[3], test5$pvals[3], test6$pvals[3], test7$pvals[3], test8$pvals[3])
+  o <- c(test0$pvals[4], test1$pvals[4], test2$pvals[4], test3$pvals[4], test4$pvals[4], test5$pvals[4], test6$pvals[4], test7$pvals[4], test8$pvals[4])
+  
+  dff = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+  dff$pc1 <- l
+  dff$pc2 <- m
+  dff$pc3 <- n
+  dff$pc4 <- o
+  
+  
+  return(dff)
+}
+```
+
+
+# running Qpc, 1.1, for the F statistic (qm)
+```{r}
+compile_qpc_subset_qm <- function(x, y){
+  
+  test0 <- do_calcQpc_subset(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset(y, x$mean_Height)
+  test6 <- do_calcQpc_subset(y, x$mean_Length)
+  test7 <- do_calcQpc_subset(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset(y, x$mean_R.Weight)
+  
+  n <- c(test0$qm, test1$qm, test2$qm, test3$qm, test4$qm, test5$qm, test6$qm, test7$qm, test8$qm)
+  return(n)
+}
+
+compile_qpc_subset_t_qm <- function(x, y){
+  
+  test0 <- do_calcQpc_subset_t(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset_t(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset_t(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset_t(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset_t(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset_t(y, x$mean_Height)
+  test6 <- do_calcQpc_subset_t(y, x$mean_Length)
+  test7 <- do_calcQpc_subset_t(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset_t(y, x$mean_R.Weight)
+  
+  n <- c(test0$qm, test1$qm, test2$qm, test3$qm, test4$qm, test5$qm, test6$qm, test7$qm, test8$qm)
+  return(n)
+}
+
+compile_qpc_subset_T_qm <- function(x, y){
+  
+  test0 <- do_calcQpc_subset_T(y, x$mean_Diameter)
+  test1 <- do_calcQpc_subset_T(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_subset_T(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_subset_T(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_subset_T(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_subset_T(y, x$mean_Height)
+  test6 <- do_calcQpc_subset_T(y, x$mean_Length)
+  test7 <- do_calcQpc_subset_T(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_subset_T(y, x$mean_R.Weight)
+  
+  n <- c(test0$qm, test1$qm, test2$qm, test3$qm, test4$qm, test5$qm, test6$qm, test7$qm, test8$qm)
+  return(n)
+}
+
+compile_qpc_qm <- function(x, y){
+  
+  test0 <- do_calcQpc(y, x$mean_Diameter)
+  test1 <- do_calcQpc(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc(y, x$mean_Height)
+  test6 <- do_calcQpc(y, x$mean_Length)
+  test7 <- do_calcQpc(y, x$mean_S.Weight)
+  test8 <- do_calcQpc(y, x$mean_R.Weight)
+  
+  l <- c(test0$qm[1], test1$qm[1], test2$qm[1], test3$qm[1], test4$qm[1], test5$qm[1], test6$qm[1], test7$qm[1], test8$qm[1])
+  m <- c(test0$qm[2], test1$qm[2], test2$qm[2], test3$qm[2], test4$qm[2], test5$qm[2], test6$qm[2], test7$qm[2], test8$qm[2])
+  n <- c(test0$qm[3], test1$qm[3], test2$qm[3], test3$qm[3], test4$qm[3], test5$qm[3], test6$qm[3], test7$qm[3], test8$qm[3])
+  o <- c(test0$qm[4], test1$qm[4], test2$qm[4], test3$qm[4], test4$qm[4], test5$qm[4], test6$qm[4], test7$qm[4], test8$qm[4])
+  
+  dff = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+  dff$pc1 <- l
+  dff$pc2 <- m
+  dff$pc3 <- n
+  dff$pc4 <- o
+  
+  
+  return(dff)
+}
+
+compile_qpc_treat_qm <- function(x, y){
+  
+  test0 <- do_calcQpc_treat(y, x$mean_Diameter)
+  test1 <- do_calcQpc_treat(y, x$mean_Germination..days.)
+  test2 <- do_calcQpc_treat(y, x$mean_Dead.Leaf)
+  test3 <- do_calcQpc_treat(y, x$mean_Live.Leaf)
+  test4 <- do_calcQpc_treat(y, x$mean_Total.Leaf)
+  test5 <- do_calcQpc_treat(y, x$mean_Height)
+  test6 <- do_calcQpc_treat(y, x$mean_Length)
+  test7 <- do_calcQpc_treat(y, x$mean_S.Weight)
+  test8 <- do_calcQpc_treat(y, x$mean_R.Weight)
+  
+  l <- c(test0$qm[1], test1$qm[1], test2$qm[1], test3$qm[1], test4$qm[1], test5$qm[1], test6$qm[1], test7$qm[1], test8$qm[1])
+  m <- c(test0$qm[2], test1$qm[2], test2$qm[2], test3$qm[2], test4$qm[2], test5$qm[2], test6$qm[2], test7$qm[2], test8$qm[2])
+  n <- c(test0$qm[3], test1$qm[3], test2$qm[3], test3$qm[3], test4$qm[3], test5$qm[3], test6$qm[3], test7$qm[3], test8$qm[3])
+  o <- c(test0$qm[4], test1$qm[4], test2$qm[4], test3$qm[4], test4$qm[4], test5$qm[4], test6$qm[4], test7$qm[4], test8$qm[4])
+  
+  dff = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+  dff$pc1 <- l
+  dff$pc2 <- m
+  dff$pc3 <- n
+  dff$pc4 <- o
+  
+  
+  return(dff)
+}
+```
+
+# running Qpc, 2
+```{r}
+df = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+df$wild <- compile_qpc_subset(wild, jEig_wild)
+df$cultivated <- compile_qpc_subset_T(cultivated, jEig_cultivated)
+df$east <- compile_qpc_subset_T(east, jEig_east)
+df$west <- compile_qpc_subset(west, jEig_west)
+df$wild_treat <- compile_qpc_subset_t(wild_treat, jEig_wild_treat)
+df$cultivated_treat <- compile_qpc_subset_T(cultivated_treat, jEig_cultivated_treat)
+df$east_treat <- compile_qpc_subset(east_treat, jEig_east_treat)
+df$west_treat <- compile_qpc_subset(west_treat, jEig_west_treat)
+df$wild_diff <- compile_qpc_subset_t(wild_diff, jEig_wild_treat)
+df$cultivated_diff <- compile_qpc_subset_T(cultivated_diff, jEig_cultivated_treat)
+df$east_diff <- compile_qpc_subset(east_diff, jEig_east_treat)
+df$west_diff <- compile_qpc_subset(west_diff, jEig_west_treat)
+View(df)
+
+df2 = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+df2$wild <- compile_qpc_subset(wild, jEig_wild)
+df2$cultivated <- compile_qpc_subset_T(cultivated, jEig_cultivated)
+df2$east <- compile_qpc_subset_T(east, jEig_east)
+df2$west <- compile_qpc_subset(west, jEig_west)
+df2$wild_treat <- compile_qpc_subset_t(wild_treat, jEig_wild_treat)
+df2$cultivated_treat <- compile_qpc_subset_T(cultivated_treat, jEig_cultivated_treat)
+df2$east_treat <- compile_qpc_subset(east_treat, jEig_east_treat)
+df2$west_treat <- compile_qpc_subset(west_treat, jEig_west_treat)
+df2$wild_diff <- compile_qpc_subset_t(wild_diff, jEig_wild_treat)
+df2$cultivated_diff <- compile_qpc_subset_T(cultivated_diff, jEig_cultivated_treat)
+df2$east_diff <- compile_qpc_subset(east_diff, jEig_east_treat)
+df2$west_diff <- compile_qpc_subset(west_diff, jEig_west_treat)
+
+xxx <- as.data.frame(compile_qpc(jTraits, jEig_complete))
+yyy <- as.data.frame(compile_qpc_treat(jTraits_treat, jEig_complete_treat))
+zzz <- as.data.frame(compile_qpc_treat(jTraits_diff_final_complete, jEig_complete_treat))
+
+colnames(xxx) <- c("trait", "complete PC1", "complete PC2", "complete PC3", "complete PC4")
+colnames(yyy) <- c("trait2", "treat PC1", "treat PC2", "treat PC3", "treat PC4")
+colnames(zzz) <- c("trait3", "diff PC1", "diff PC2", "diff PC3", "diff PC4")
+
+aaa <- cbind(xxx, yyy, zzz)
+aaa <- aaa %>% select(-trait2, -trait3)
+
+View(aaa)
+View(xxx)
+```
+
+# running Qpc, 2, making qm tables
+```{r}
+df3 = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+df3$wild <- compile_qpc_subset_qm(wild, jEig_wild)
+df3$cultivated <- compile_qpc_subset_T_qm(cultivated, jEig_cultivated)
+df3$east <- compile_qpc_subset_T_qm(east, jEig_east)
+df3$west <- compile_qpc_subset_qm(west, jEig_west)
+df3$wild_treat <- compile_qpc_subset_t_qm(wild_treat, jEig_wild_treat)
+df3$cultivated_treat <- compile_qpc_subset_T_qm(cultivated_treat, jEig_cultivated_treat)
+df3$east_treat <- compile_qpc_subset_qm(east_treat, jEig_east_treat)
+df3$west_treat <- compile_qpc_subset_qm(west_treat, jEig_west_treat)
+df3$wild_diff <- compile_qpc_subset_t_qm(wild_diff, jEig_wild_treat)
+df3$cultivated_diff <- compile_qpc_subset_T_qm(cultivated_diff, jEig_cultivated_treat)
+df3$east_diff <- compile_qpc_subset_qm(east_diff, jEig_east_treat)
+df3$west_diff <- compile_qpc_subset_qm(west_diff, jEig_west_treat)
+View(df3)
+
+df4 = as.data.frame(c("Root Diameter", "Gernimation Days", "Dead Leaf", "Live Leaf", "Total Leaf", "Heigh", "Length", "Shoot Weight", "Root Weight"))
+df4$wild <- compile_qpc_subset_qm(wild, jEig_wild)
+df4$cultivated <- compile_qpc_subset_T_qm(cultivated, jEig_cultivated)
+df4$east <- compile_qpc_subset_T_qm(east, jEig_east)
+df4$west <- compile_qpc_subset_qm(west, jEig_west)
+df4$wild_treat <- compile_qpc_subset_t_qm(wild_treat, jEig_wild_treat)
+df4$cultivated_treat <- compile_qpc_subset_T_qm(cultivated_treat, jEig_cultivated_treat)
+df4$east_treat <- compile_qpc_subset_qm(east_treat, jEig_east_treat)
+df4$west_treat <- compile_qpc_subset_qm(west_treat, jEig_west_treat)
+df4$wild_diff <- compile_qpc_subset_t_qm(wild_diff, jEig_wild_treat)
+df4$cultivated_diff <- compile_qpc_subset_T_qm(cultivated_diff, jEig_cultivated_treat)
+df4$east_diff <- compile_qpc_subset_qm(east_diff, jEig_east_treat)
+df4$west_diff <- compile_qpc_subset_qm(west_diff, jEig_west_treat)
+
+lll <- as.data.frame(compile_qpc_qm(jTraits, jEig_complete))
+mmm <- as.data.frame(compile_qpc_treat_qm(jTraits_treat, jEig_complete_treat))
+nnn <- as.data.frame(compile_qpc_treat_qm(jTraits_diff_final_complete, jEig_complete_treat))
+
+colnames(lll) <- c("trait", "complete PC1", "complete PC2", "complete PC3", "complete PC4")
+colnames(mmm) <- c("trait2", "treat PC1", "treat PC2", "treat PC3", "treat PC4")
+colnames(nnn) <- c("trait3", "diff PC1", "diff PC2", "diff PC3", "diff PC4")
+
+bbb <- cbind(lll, mmm, nnn)
+bbb <- bbb %>% select(-trait2, -trait3)
+
+View(bbb)
+```
+
+# export p-vals as csv
+```{r}
+write.csv(df2, "pvalues.csv")
+write.csv(aaa, 'pvalues_complete_updated.csv')
+```
+
+# export qm values as csv
+```{r}
+write.csv(df4, "qm.csv")
+write.csv(bbb, 'qm_complete_updated.csv')
+```
+
+# plot qpc function, try 2
+```{r}
+# for subset
+do_Qpc_plot <- function(eigs, trait_df, phenotype_column, pc, z, xlab, top_title, legendx, legendy){
+    
+  n = calcQpc(myZ = phenotype_column,
+               myU = eigs$vectors,
+               myLambdas = eigs$values,
+               myM = 1:1,
+               myL = 2:z)
+  
+  myVaest = var0(n$cml)
+  myCI = 1.96*sqrt(myVaest*eigs$values)
+  
+  plot(eigs$vectors[,pc], phenotype_column[-nrow(trait_df)], bty="n", col = as.factor(trait_df$Group), lwd=2, ylab = "", yaxt="n", xlab = xlab, cex.lab=2,   cex.axis=2, xaxt="n")
+  axis(1, cex.axis=1.5, lwd=2)
+  axis(2, las=2, cex.axis=1.5, lwd=2)
+  mtext(text = top_title ,side=2, line=5, cex=2)
+  #mtext(text = paste("p-value = ", round(n$pvals, digits = 2)), side = 3, adj = 1)
+  legend(legendx, legendy, levels(as.factor(trait_df$Group)), pch=1, pt.lwd = 2,col = palette(), bty="n", text.width = 0.04)
+  par(xpd=F)
+  abline(lm(phenotype_column[-nrow(trait_df)]~eigs$vector[,pc]), lwd=2, col = "#0072B2")
+  abline(a=mean(phenotype_column), b = myCI[pc], lty=2, col='#56B4E9', lwd=2)
+  abline(a=mean(phenotype_column), b = -myCI[pc], lty=2, col='#56B4E9', lwd=2)
+    
+  return(plot)
+}
+
+# for complete
+do_Qpc_plot_comp <- function(eigs, trait_df, phenotype_column, pc, z, xlab, top_title, legendx, legendy){
+    
+  n = calcQpc(myZ = phenotype_column,
+               myU = eigs$vectors,
+               myLambdas = eigs$values,
+               myM = 1:4,
+               myL = 5:z)
+  
+  myVaest = var0(n$cml)
+  myCI = 1.96*sqrt(myVaest*eigs$values)
+  
+  plot(eigs$vectors[,pc], phenotype_column[-nrow(trait_df)], bty="n", col = as.factor(trait_df$Group), lwd=2, ylab = "", yaxt="n", xlab = xlab, cex.lab=2,   cex.axis=2, xaxt="n")
+  axis(1, cex.axis=1.5, lwd=2)
+  axis(2, las=2, cex.axis=1.5, lwd=2)
+  mtext(text = top_title ,side=2, line=5, cex=2)
+  #mtext(text = paste("p-value = ", round(n$pvals, digits = 2)), side = 3, adj = 1)
+  legend(legendx, legendy, levels(as.factor(trait_df$Group)), pch=1, pt.lwd = 2,col = palette(), bty="n", text.width = 0.04)
+  par(xpd=F)
+  abline(lm(phenotype_column[-nrow(trait_df)]~eigs$vector[,pc]), lwd=2, col = "#0072B2")
+  abline(a=mean(phenotype_column), b = myCI[pc], lty=2, col='#56B4E9', lwd=2)
+  abline(a=mean(phenotype_column), b = -myCI[pc], lty=2, col='#56B4E9', lwd=2)
+    
+  return(plot)
+}
+```
+
+# try plotting function
+```{r}
+do_Qpc_plot(jEig_cultivated, cultivated, cultivated$mean_Diameter, 1, 11, "PC1","Root Diameter", -0.1, 2.0)
+do_Qpc_plot(jEig_cultivated, cultivated, cultivated$mean_S.Weight, 1, 11, "PC1","Shoot Weight", -0.1, 1.0)
+do_Qpc_plot(jEig_cultivated, cultivated, cultivated$mean_R.Weight, 1, 11, "PC1","Root Weight", -0.1, 2.2)
+
+do_Qpc_plot(jEig_east, east, east$mean_Diameter, 1, 11, "PC1","Root Diameter", 0, 2.0)
+do_Qpc_plot(jEig_east, east, east$mean_Total.Leaf, 1, 11, "PC1","Total Leaf", 0, 8.5)
+do_Qpc_plot(jEig_east, east, east$mean_R.Weight, 1, 11, "PC1","Root Weight", 0, 2.0)
+
+do_Qpc_plot(jEig_east_treat, east_treat, east_treat$mean_Diameter, 1, 10, "PC1","Root Diameter", 0.1, 2.4)
+do_Qpc_plot(jEig_east_treat, east_treat, east_treat$mean_Height, 1, 10, "PC1","Height", 0, 2.0)
+```
+
+# plotting function for complete data set
+```{r}
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_Diameter, 1, 23, "PC1", "Root Diameter", 5, 5)
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_Diameter, 2, 23, "PC2", "Root Diameter", 1.0, 0.0)
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_Diameter, 3, 23, "PC3", "Root Diameter", 1.0, 0.0)
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_R.Weight, 2, 23, "PC2", "Root Weight", 1.0, 0.0)
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_Diameter, 3, 23, "PC3", "Dead Leaf", 1.0, 0.0)
+do_Qpc_plot_comp(jEig_complete, jTraits, jTraits$mean_Dead.Leaf, 4, 23, "PC4", "Dead Leaf", 3.0, 0.3)
+
+do_Qpc_plot_comp(jEig_complete_treat, jTraits_treat, jTraits_treat$mean_Diameter, 1, 21, "PC1", "Root Diameter", 2, 1)
+do_Qpc_plot_comp(jEig_complete_treat, jTraits_treat, jTraits_treat$mean_Diameter, 2, 21, "PC2", "Root Diameter", 5, 5)
+do_Qpc_plot_comp(jEig_complete_treat, jTraits_treat, jTraits_treat$mean_Diameter, 3, 21, "PC3", "Root Diameter", 5, 5)
+do_Qpc_plot_comp(jEig_complete_treat, jTraits_treat, jTraits_treat$mean_Live.Leaf, 3, 21, "PC3", "Live Leaf", 2, 1)
+do_Qpc_plot_comp(jEig_complete_treat, jTraits_treat, jTraits_treat$mean_Total.Leaf, 3, 21, "PC3", "Total Leaf", 2, 1)
+```
+
+# plot some of the diff analyses
+```{r}
+do_Qpc_plot(jEig_complete_treat, jTraits_diff_final_complete, jTraits_diff_final_complete$mean_Diameter, 1, 21, "PC1", "Root Diameter", 10, 10)
+```
+
+
+# pca bi-plot of pops only
+```{r}
+k_pca <- prcomp(jG_4[,c(-1, -2, -3)])
+summary(k_pca)
+pca_plot_1 <- autoplot(k_pca, data = jG_4, colour = 'Group', size = 5) + theme_classic() + geom_jitter() + theme(legend.text = element_text(size = 15), axis.title = element_text(size = 15), legend.title = element_text(size = 15))
+pca_plot_2 <- autoplot(k_pca, data = jG_4, colour = 'Group', x = 2, y = 3, size = 5) + theme_classic() + geom_jitter()+ theme(legend.text = element_text(size = 15), axis.title = element_text(size = 15), legend.title = element_text(size = 15))
+pca_plot_3 <- autoplot(k_pca, data = jG_4, colour = 'Group', x = 3, y = 4, size = 5) + theme_classic() + geom_jitter()+ theme(legend.text = element_text(size = 15), axis.title = element_text(size = 15), legend.title = element_text(size = 15))
+
+
+png("biplot1.png", width = 700, height = 500)
+pca_plot_1
+dev.off()
+png("biplot2.png", width = 580, height = 480)
+pca_plot_2
+dev.off()
+png("biplot3.png", width = 580, height = 480)
+pca_plot_3
+dev.off()
+
+pca_plot_1
+pca_plot_2
+pca_plot_3
+
+?pf
+?var0
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

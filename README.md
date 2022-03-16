@@ -1,2 +1,2 @@
 # daucus_popgen
-## Scripts for implementing QPC (Josephs et al 2019) using the R package quaint
+## Implementing QPC (Josephs et al 2019) using _Daucus carota_

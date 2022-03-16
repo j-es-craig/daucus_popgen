@@ -1,2 +1,2 @@
 # daucus_popgen
-## Implementing QPC (Josephs et al 2019) using _Daucus carota_
+## Testing QPC (Josephs et al 2019) on _Daucus carota_
